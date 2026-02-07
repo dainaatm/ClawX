@@ -2,11 +2,11 @@
  * ClawHub Service
  * Manages interactions with the ClawHub CLI for skills management
  */
-import { spawn } from 'child_process';
+import { app, shell, utilityProcess } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import { app, shell } from 'electron';
 import { getOpenClawConfigDir, ensureDir } from '../utils/paths';
+import { logger } from '../utils/logger';
 
 export interface ClawHubSearchParams {
     query: string;
@@ -40,15 +40,20 @@ export class ClawHubService {
 
     constructor() {
         // Use the user's OpenClaw config directory (~/.openclaw) for skill management
-        // This avoids installing skills into the project's openclaw submodule
         this.workDir = getOpenClawConfigDir();
         ensureDir(this.workDir);
 
-        // In development, we use the locally installed clawhub CLI from node_modules
-        const isWin = process.platform === 'win32';
-        const binName = isWin ? 'clawhub.cmd' : 'clawhub';
-        const localCli = path.resolve(app.getAppPath(), 'node_modules', '.bin', binName);
-        this.cliPath = localCli;
+        // Find the clawhub entry script
+        // In packaged app, it's in resources/app.asar.unpacked/node_modules/clawhub/bin/clawdhub.js
+        // via require.resolve logic similar to openclaw
+        try {
+            const pkgPath = require.resolve('clawhub/package.json');
+            this.cliPath = path.join(path.dirname(pkgPath), 'bin', 'clawdhub.js');
+        } catch (e) {
+            // Fallback
+            this.cliPath = path.resolve(app.getAppPath(), 'node_modules', 'clawhub', 'bin', 'clawdhub.js');
+        }
+
         const esc = String.fromCharCode(27);
         const csi = String.fromCharCode(155);
         const pattern = `(?:${esc}|${csi})[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]`;
@@ -64,39 +69,32 @@ export class ClawHubService {
      */
     private async runCommand(args: string[]): Promise<string> {
         return new Promise((resolve, reject) => {
-            console.log(`Running ClawHub command: ${this.cliPath} ${args.join(' ')}`);
+            logger.info(`Running ClawHub command via UtilityProcess: ${this.cliPath} ${args.join(' ')}`);
 
-            const isWin = process.platform === 'win32';
-            const child = spawn(this.cliPath, args, {
+            const child = utilityProcess.fork(this.cliPath, args, {
                 cwd: this.workDir,
-                shell: isWin,
+                stdio: 'pipe',
                 env: {
                     ...process.env,
                     CI: 'true',
-                    FORCE_COLOR: '0', // Disable colors for easier parsing
+                    FORCE_COLOR: '0',
                 },
             });
 
             let stdout = '';
             let stderr = '';
 
-            child.stdout.on('data', (data) => {
+            child.stdout?.on('data', (data) => {
                 stdout += data.toString();
             });
 
-            child.stderr.on('data', (data) => {
+            child.stderr?.on('data', (data) => {
                 stderr += data.toString();
             });
 
-            child.on('error', (error) => {
-                console.error('ClawHub process error:', error);
-                reject(error);
-            });
-
-            child.on('close', (code) => {
+            child.on('exit', (code) => {
                 if (code !== 0 && code !== null) {
-                    console.error(`ClawHub command failed with code ${code}`);
-                    console.error('Stderr:', stderr);
+                    logger.error(`ClawHub command failed with code ${code}, stderr: ${stderr}`);
                     reject(new Error(`Command failed: ${stderr || stdout}`));
                 } else {
                     resolve(stdout.trim());

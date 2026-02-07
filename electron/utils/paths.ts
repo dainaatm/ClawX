@@ -3,7 +3,7 @@
  * Cross-platform path resolution helpers
  */
 import { app } from 'electron';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync } from 'fs';
 
@@ -71,42 +71,65 @@ export function getPreloadPath(): string {
   return join(__dirname, '../preload/index.js');
 }
 
+// Use createRequire to resolve dependencies
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
 /**
- * Get OpenClaw submodule directory
+ * Get OpenClaw package directory (from node_modules)
  */
 export function getOpenClawDir(): string {
-  if (app.isPackaged) {
-    return join(process.resourcesPath, 'openclaw');
+  try {
+    // Resolve the package root using the package.json location
+    // This works for both dev (node_modules) and prod (bundled)
+    let pkgPath = require.resolve('openclaw/package.json');
+
+    // Use the path within ASAR directly for utilityProcess.fork
+    // This allows Electron's module loader to find dependencies (like chalk) inside app.asar
+    return dirname(pkgPath);
+  } catch (error) {
+    // Fallback logic if resolution fails
+    if (app.isPackaged) {
+      // In packaged app, dependencies should be in resources/app.asar.unpacked/node_modules
+      return join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'openclaw');
+    }
+    // In dev, standard node_modules
+    return join(process.cwd(), 'node_modules', 'openclaw');
   }
-  return join(__dirname, '../../openclaw');
 }
 
 /**
- * Get OpenClaw entry script path (openclaw.mjs)
+ * Get OpenClaw entry script path (dist/entry.js)
  */
 export function getOpenClawEntryPath(): string {
-  return join(getOpenClawDir(), 'openclaw.mjs');
+  return join(getOpenClawDir(), 'dist', 'entry.js');
 }
 
 /**
- * Check if OpenClaw submodule exists
+ * Check if OpenClaw is installed (replaces submodule check)
  */
 export function isOpenClawSubmodulePresent(): boolean {
-  return existsSync(getOpenClawDir()) && existsSync(join(getOpenClawDir(), 'package.json'));
+  // Always true as we use the managed dependency
+  return true;
 }
 
 /**
- * Check if OpenClaw is built (has dist folder with entry.js)
+ * Check if OpenClaw is built
  */
 export function isOpenClawBuilt(): boolean {
-  return existsSync(join(getOpenClawDir(), 'dist', 'entry.js'));
+  // Always true for installed dependency
+  return true;
 }
 
 /**
  * Check if OpenClaw has node_modules installed
  */
 export function isOpenClawInstalled(): boolean {
-  return existsSync(join(getOpenClawDir(), 'node_modules'));
+  try {
+    return existsSync(getOpenClawEntryPath());
+  } catch {
+    return false;
+  }
 }
 
 /**

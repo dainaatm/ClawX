@@ -69,6 +69,11 @@ function createWindow(): BrowserWindow {
  * Initialize the application
  */
 async function initialize(): Promise<void> {
+  // Initialize logger early
+  const { logger } = await import('../utils/logger');
+  logger.init();
+  logger.info('Application starting...');
+
   // Set application menu
   createMenu();
 

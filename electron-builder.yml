@@ -21,27 +21,10 @@ extraResources:
       - "!icons/*.md"
       - "!icons/*.svg"
       - "!bin/**"
-  # OpenClaw submodule - include only necessary files for runtime
-  - from: openclaw/
-    to: openclaw/
-    filter:
-      - "openclaw.mjs"
-      - "package.json"
-      - "dist/**/*"
-      - "skills/**/*"
-      - "extensions/**/*"
-      - "scripts/run-node.mjs"
-      - "!**/node_modules/**" # Exclude openclaw/node_modules as we are hosting deps in root
-      - "!**/*.test.ts"
-      - "!**/*.test.js"
-      - "!**/test/**"
-      - "!**/.git"
-      - "!**/.github"
-      - "!**/docs/**"
-
 asar: true
 asarUnpack:
   - "**/*.node"
+
 
 # Auto-update configuration
 publish:
